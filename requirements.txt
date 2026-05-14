@@ -4,3 +4,4 @@ pillow
 googletrans==4.0.0rc1
 gtts
 moviepy
+imageio-ffmpeg

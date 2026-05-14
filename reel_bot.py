@@ -44,10 +44,12 @@ translator = Translator()
 # ===============================
 
 if not os.path.exists(POSTED_FILE):
-    json.dump([], open(POSTED_FILE, "w"))
+    with open(POSTED_FILE, "w") as f:
+        json.dump([], f)
 
 try:
-    posted = json.load(open(POSTED_FILE))
+    with open(POSTED_FILE, "r") as f:
+        posted = json.load(f)
 except:
     posted = []
 
@@ -202,7 +204,7 @@ start_json = start_res.json()
 
 print("START:", start_json)
 
- if "video_id" not in start_json or "upload_url" not in start_json:
+if "video_id" not in start_json or "upload_url" not in start_json:
     print("❌ Failed to start Reel upload")
     exit()
 

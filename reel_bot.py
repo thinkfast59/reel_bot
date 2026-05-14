@@ -1,5 +1,6 @@
 import os
 import json
+import time
 import random
 import requests
 import feedparser
@@ -9,13 +10,25 @@ from io import BytesIO
 from googletrans import Translator
 from moviepy.editor import ImageClip, AudioFileClip
 
+# ===============================
+# FACEBOOK CONFIG
+# ===============================
+
 PAGE_ID = "1020689164470492"
 PAGE_ACCESS_TOKEN = "EAIFMs5yoDt0BRaZBnr8ZCFXX3AY6swXBZBsP6bcgJlQBr0OAxIQI9rfnT2dx2nVfPaUST5XsFgPdDSYX82BHdFAaPGkBZBqZBdrW43lcF5gpOYZCp74K6n0gh5fgd1U5ewm7FtcNbU9ZAbP6ZAX1X4f5qhNvE1jg6b1KfIZCF5looE0z41sVwo80iNoZAxD5QSkrXHId9IArdpOAUZCoVspdX9GBQjpux7O6YedvyTY6N6wrZApnfw1FZCl5AU2QZD"
+
+# ===============================
+# FILES
+# ===============================
 
 POSTED_FILE = "posted_reels.json"
 IMAGE_FILE = "reel_bg.jpg"
 VOICE_FILE = "voice.mp3"
 VIDEO_FILE = "sinhala_reel.mp4"
+
+# ===============================
+# NEWS SOURCES
+# ===============================
 
 RSS_FEEDS = [
     "https://feeds.bbci.co.uk/news/world/rss.xml",
@@ -23,6 +36,12 @@ RSS_FEEDS = [
     "https://feeds.bbci.co.uk/news/technology/rss.xml",
     "https://feeds.bbci.co.uk/news/health/rss.xml",
 ]
+
+translator = Translator()
+
+# ===============================
+# LOAD POSTED
+# ===============================
 
 if not os.path.exists(POSTED_FILE):
     json.dump([], open(POSTED_FILE, "w"))
@@ -32,30 +51,42 @@ try:
 except:
     posted = []
 
-translator = Translator()
-
 print("🎬 Sinhala Auto Reel Bot Started")
+
+# ===============================
+# GET NEWS
+# ===============================
 
 articles = []
 
 for feed in RSS_FEEDS:
     data = feedparser.parse(feed)
+
     for entry in data.entries[:10]:
         if entry.link not in posted:
             articles.append(entry)
 
 if not articles:
-    print("No new articles")
+    print("❌ No new articles")
     exit()
 
 news = random.choice(articles)
+
 title_en = news.title
 link = news.link
+
+# ===============================
+# TRANSLATE
+# ===============================
 
 try:
     title_si = translator.translate(title_en, dest="si").text
 except:
     title_si = title_en
+
+# ===============================
+# SCRIPT + CAPTION
+# ===============================
 
 script = f"""
 ලෝක පුවත් සිංහලෙන්.
@@ -80,8 +111,18 @@ caption = f"""
 #ලෝකපුවත් #සිංහලපුවත් #WorldNews #BreakingNews
 """
 
+# ===============================
+# CREATE VOICE
+# ===============================
+
 tts = gTTS(text=script, lang="si")
 tts.save(VOICE_FILE)
+
+print("🎙 Voice created")
+
+# ===============================
+# CREATE IMAGE
+# ===============================
 
 img_url = f"https://picsum.photos/1080/1920?random={random.randint(1,999999)}"
 img_data = requests.get(img_url, timeout=20).content
@@ -123,8 +164,16 @@ draw.text((70, 1600), "Follow කරන්න • World News in Sinhala", fill="
 
 img.save(IMAGE_FILE, "JPEG", quality=95)
 
+print("🖼 Image created")
+
+# ===============================
+# CREATE VIDEO
+# ===============================
+
 audio = AudioFileClip(VOICE_FILE)
-clip = ImageClip(IMAGE_FILE).set_duration(audio.duration).set_audio(audio)
+
+clip = ImageClip(IMAGE_FILE).set_duration(audio.duration)
+clip = clip.set_audio(audio)
 
 clip.write_videofile(
     VIDEO_FILE,
@@ -136,7 +185,7 @@ clip.write_videofile(
 print("✅ Video created")
 
 # ===============================
-# FACEBOOK REELS AUTO UPLOAD
+# FACEBOOK REELS UPLOAD — START
 # ===============================
 
 print("🚀 Starting Facebook Reel upload")
@@ -153,27 +202,42 @@ start_json = start_res.json()
 
 print("START:", start_json)
 
-if "video_id" not in start_json or "upload_url" not in start_json:
+ if "video_id" not in start_json or "upload_url" not in start_json:
     print("❌ Failed to start Reel upload")
     exit()
 
 video_id = start_json["video_id"]
 upload_url = start_json["upload_url"]
 
+# ===============================
+# UPLOAD VIDEO FILE
+# ===============================
+
+file_size = os.path.getsize(VIDEO_FILE)
+
 with open(VIDEO_FILE, "rb") as video_file:
     upload_headers = {
         "Authorization": f"OAuth {PAGE_ACCESS_TOKEN}",
         "offset": "0",
-        "file_size": str(os.path.getsize(VIDEO_FILE)),
+        "file_size": str(file_size),
     }
 
-    upload_res = requests.post(upload_url, headers=upload_headers, data=video_file)
+    upload_res = requests.post(
+        upload_url,
+        headers=upload_headers,
+        data=video_file
+    )
 
 print("UPLOAD:", upload_res.text)
+
+# ===============================
+# FINISH + PUBLISH REEL
+# ===============================
 
 finish_data = {
     "upload_phase": "finish",
     "video_id": video_id,
+    "video_state": "PUBLISHED",
     "description": caption,
     "access_token": PAGE_ACCESS_TOKEN
 }
@@ -183,9 +247,59 @@ finish_json = finish_res.json()
 
 print("FINISH:", finish_json)
 
-if finish_res.status_code == 200 and ("success" in finish_json or "post_id" in finish_json or "id" in finish_json):
-    print("✅ REEL POSTED SUCCESSFULLY")
+# ===============================
+# CHECK REEL STATUS
+# ===============================
+
+print("⏳ Checking Reel processing status...")
+
+ready = False
+
+for i in range(12):
+    time.sleep(10)
+
+    status_url = f"https://graph.facebook.com/v23.0/{video_id}"
+
+    status_params = {
+        "fields": "status,permalink_url",
+        "access_token": PAGE_ACCESS_TOKEN
+    }
+
+    status_res = requests.get(status_url, params=status_params)
+    status_json = status_res.json()
+
+    print("STATUS:", status_json)
+
+    if "status" in status_json:
+        status = status_json["status"]
+
+        if isinstance(status, dict):
+            video_status = status.get("video_status")
+
+            if video_status == "ready":
+                print("✅ REEL READY")
+                ready = True
+                break
+
+            if video_status == "error":
+                print("❌ REEL PROCESSING ERROR")
+                break
+
+# ===============================
+# SAVE POSTED
+# ===============================
+
+if finish_res.status_code == 200 and finish_json.get("success") == True:
+    print("✅ REEL UPLOAD ACCEPTED BY FACEBOOK")
+
     posted.append(link)
-    json.dump(posted, open(POSTED_FILE, "w"))
+
+    with open(POSTED_FILE, "w") as f:
+        json.dump(posted, f)
+
+    if ready:
+        print("✅ REEL SHOULD NOW APPEAR ON PAGE")
+    else:
+        print("⚠️ REEL ACCEPTED BUT STILL PROCESSING")
 else:
     print("❌ REEL POST FAILED")

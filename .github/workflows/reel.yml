@@ -21,9 +21,9 @@ jobs:
       - name: Install FFmpeg and Sinhala Fonts
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg fonts-noto-core fonts-noto-extra
+          sudo apt-get install -y ffmpeg fonts-noto-core fonts-noto-extra fonts-noto-ui-core
 
-      - name: Install Python Dependencies
+      - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
@@ -31,7 +31,7 @@ jobs:
       - name: Run Reel Bot
         run: python reel_bot.py
 
-      - name: Upload Video Artifact
+      - name: Upload Reel Video Artifact
         uses: actions/upload-artifact@v4
         with:
           name: sinhala-reel-video

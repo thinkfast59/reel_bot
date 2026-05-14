@@ -1,4 +1,4 @@
-name: Sinhala Reel Generator
+name: Sinhala Auto Reel Bot
 
 on:
   workflow_dispatch:
@@ -6,7 +6,7 @@ on:
     - cron: "30 1 * * *"   # 7:00 AM Sri Lanka time
 
 jobs:
-  create-reel:
+  create-and-upload-reel:
     runs-on: ubuntu-latest
 
     steps:
@@ -24,11 +24,5 @@ jobs:
       - name: Install Dependencies
         run: pip install -r requirements.txt
 
-      - name: Create Sinhala Reel
+      - name: Run Sinhala Reel Bot
         run: python reel_bot.py
-
-      - name: Upload Reel Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: sinhala-reel-video
-          path: sinhala_reel.mp4

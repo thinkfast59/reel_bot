@@ -118,30 +118,49 @@ def download_image(url):
         return None
 
 def cover_resize(img, target_w=1080, target_h=1920):
+
     w, h = img.size
-    target_ratio = target_w / target_h
-    img_ratio = w / h
 
-    if img_ratio > target_ratio:
-        new_w = int(h * target_ratio)
-        left = (w - new_w) // 2
-        img = img.crop((left, 0, left + new_w, h))
-    else:
-        new_h = int(w / target_ratio)
-        top = (h - new_h) // 2
-        img = img.crop((0, top, w, top + new_h))
+    scale = max(target_w / w, target_h / h)
 
-    return img.resize((target_w, target_h))
+    new_w = int(w * scale)
+    new_h = int(h * scale)
 
+    img = img.resize((new_w, new_h))
+
+    left = (new_w - target_w) // 2
+    top = (new_h - target_h) // 2
+
+    img = img.crop((
+        left,
+        top,
+        left + target_w,
+        top + target_h
+    ))
+
+    return img
 def create_fallback_image():
     img_url = f"https://picsum.photos/1080/1920?random={random.randint(1,999999)}"
     img = download_image(img_url)
 
     if img:
-        return cover_resize(img)
+    return cover_resize(img)
 
-    return Image.new("RGB", (1080, 1920), (20, 30, 60))
+# responsive fallback gradient background
+fallback = Image.new("RGB", (1080, 1920), (18, 24, 45))
 
+# add smooth gradient
+pixels = fallback.load()
+
+for y in range(1920):
+    r = int(18 + (y / 1920) * 20)
+    g = int(24 + (y / 1920) * 35)
+    b = int(45 + (y / 1920) * 60)
+
+    for x in range(1080):
+        pixels[x, y] = (r, g, b)
+
+return fallback
 def create_voice_script(title_si, summary_si):
     openings = [
         "ලෝක පුවත් සිංහලෙන් ඔබ වෙත අද ගෙන එන වැදගත්ම පුවත මෙන්න.",

@@ -1,7 +1,12 @@
+moviepy==1.0.3
+imageio==2.34.0
+imageio-ffmpeg==0.4.9
+numpy
+pillow
 requests
 feedparser
-pillow
 googletrans==4.0.0rc1
 gtts
-moviepy
-imageio-ffmpeg
+decorator
+proglog
+tqdm

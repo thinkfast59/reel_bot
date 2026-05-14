@@ -1,1 +1,34 @@
+name: Sinhala Reel Generator
 
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "30 1 * * *"   # 7:00 AM Sri Lanka time
+
+jobs:
+  create-reel:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install FFmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - name: Install Dependencies
+        run: pip install -r requirements.txt
+
+      - name: Create Sinhala Reel
+        run: python reel_bot.py
+
+      - name: Upload Reel Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sinhala-reel-video
+          path: sinhala_reel.mp4

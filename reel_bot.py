@@ -6,18 +6,30 @@ import random
 import requests
 import feedparser
 from gtts import gTTS
-from PIL import Image, ImageDraw, ImageFont, ImageFilter
+from PIL import Image, ImageFilter
 from io import BytesIO
 from googletrans import Translator
 from moviepy.editor import ImageClip, AudioFileClip
 
+# ===============================
+# FACEBOOK CONFIG
+# ===============================
+
 PAGE_ID = "1020689164470492"
 PAGE_ACCESS_TOKEN = "EAIFMs5yoDt0BReZCljKCTlLWF7bEI3supybEvkRQooWKtf8g45g9nKg2ZCGHudumMlVdXLp67MyhZCi3Eb1vCZCZBxZA0814L1sw6jW6zvZBdnZCSolUIZBylmUvDVc60HfeDWHJCAELklhzZBf7SCZAAPZCtATBU00uZA9ZCYVjjk4viehzcZACaVPVR7wsnu3mqPXcnTUG3YRG0wPZCQKpcMXkBkUyeW7cadEvSPiZBqOnWMpCqY684DOM0cGPZCCeoZD"
+
+# ===============================
+# FILES
+# ===============================
 
 POSTED_FILE = "posted_reels.json"
 IMAGE_FILE = "reel_bg.jpg"
 VOICE_FILE = "voice.mp3"
 VIDEO_FILE = "sinhala_reel.mp4"
+
+# ===============================
+# NEWS SOURCES
+# ===============================
 
 RSS_FEEDS = [
     "https://feeds.bbci.co.uk/news/world/rss.xml",
@@ -29,30 +41,26 @@ RSS_FEEDS = [
 translator = Translator()
 
 # ===============================
-# Helpers
+# HELPERS
 # ===============================
 
 def clean_text(text):
     if not text:
         return ""
     text = re.sub("<.*?>", "", text)
-    text = text.replace("&amp;", "&").replace("&quot;", '"').replace("&nbsp;", " ")
+    text = text.replace("&amp;", "&")
+    text = text.replace("&quot;", '"')
+    text = text.replace("&nbsp;", " ")
+    text = text.replace("\n", " ")
     return text.strip()
 
 def is_good_sinhala(text):
     if not text:
         return False
-
     sinhala_chars = sum(1 for c in text if "\u0D80" <= c <= "\u0DFF")
-    bad_chars = text.count("�")
-
-    if bad_chars > 0:
+    if "�" in text:
         return False
-
-    if sinhala_chars < 5:
-        return False
-
-    return True
+    return sinhala_chars >= 5
 
 def safe_translate(text):
     try:
@@ -63,26 +71,22 @@ def safe_translate(text):
             return translated
 
         return text
-
     except Exception:
         return text
 
 def get_article_image(entry):
-    # media:thumbnail
     if "media_thumbnail" in entry:
         try:
             return entry.media_thumbnail[0]["url"]
         except Exception:
             pass
 
-    # media:content
     if "media_content" in entry:
         try:
             return entry.media_content[0]["url"]
         except Exception:
             pass
 
-    # enclosures
     if "enclosures" in entry:
         try:
             for enc in entry.enclosures:
@@ -91,7 +95,6 @@ def get_article_image(entry):
         except Exception:
             pass
 
-    # image inside summary html
     if hasattr(entry, "summary"):
         match = re.search(r'<img[^>]+src="([^"]+)"', entry.summary)
         if match:
@@ -99,83 +102,97 @@ def get_article_image(entry):
 
     return None
 
-def load_font(size):
-    paths = [
-        "/usr/share/fonts/truetype/noto/NotoSansSinhala-Regular.ttf",
-        "/usr/share/fonts/truetype/noto/NotoSerifSinhala-Regular.ttf",
-        "/usr/share/fonts/opentype/noto/NotoSansSinhala-Regular.ttf",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+def download_image(url):
+    try:
+        response = requests.get(
+            url,
+            timeout=20,
+            headers={"User-Agent": "Mozilla/5.0"}
+        )
+
+        img = Image.open(BytesIO(response.content)).convert("RGB")
+        return img
+
+    except Exception as e:
+        print("Image download failed:", e)
+        return None
+
+def cover_resize(img, target_w=1080, target_h=1920):
+    w, h = img.size
+    target_ratio = target_w / target_h
+    img_ratio = w / h
+
+    if img_ratio > target_ratio:
+        new_w = int(h * target_ratio)
+        left = (w - new_w) // 2
+        img = img.crop((left, 0, left + new_w, h))
+    else:
+        new_h = int(w / target_ratio)
+        top = (h - new_h) // 2
+        img = img.crop((0, top, w, top + new_h))
+
+    return img.resize((target_w, target_h))
+
+def create_fallback_image():
+    img_url = f"https://picsum.photos/1080/1920?random={random.randint(1,999999)}"
+    img = download_image(img_url)
+
+    if img:
+        return cover_resize(img)
+
+    return Image.new("RGB", (1080, 1920), (20, 30, 60))
+
+def create_voice_script(title_si, summary_si):
+    openings = [
+        "ලෝක පුවත් සිංහලෙන් ඔබ වෙත අද ගෙන එන වැදගත්ම පුවත මෙන්න.",
+        "අද ලෝකය පුරා අවධානය දිනාගත් පුවතක් පිළිබඳ විස්තරයි.",
+        "මෙය මේ වන විට ජාත්‍යන්තර මාධ්‍යවල වැඩි අවධානයට ලක්ව ඇති පුවතක්.",
+        "ලෝකයේ බොහෝ දෙනා කතා කරන නවතම පුවතක් දැන් ඔබට.",
     ]
 
-    for path in paths:
-        if os.path.exists(path):
-            return ImageFont.truetype(path, size)
+    middle_lines = [
+        "මෙම සිදුවීම පිළිබඳව තවදුරටත් වාර්තා ලැබෙමින් පවතින අතර, එය ඉදිරි දිනවලදී වැඩි බලපෑමක් ඇති කළ හැකිය.",
+        "මෙය සාමාන්‍ය ජනතාවට, රජයන්ට, ව්‍යාපාරික ක්ෂේත්‍රයට හෝ දෛනික ජීවිතයට බලපාන වැදගත් කරුණක් විය හැකිය.",
+        "මෙම පුවතේ පසුබිම හා ඉදිරි වර්ධනයන් පිළිබඳව ලොව පුරා බොහෝ දෙනා අවධානයෙන් සිටී.",
+        "මෙම තත්ත්වය ඉදිරියේදී ආර්ථික, සමාජීය, තාක්ෂණික හෝ ආරක්ෂක පැතිවලටද බලපෑම් කළ හැකිය.",
+    ]
 
-    return ImageFont.load_default()
+    endings = [
+        "මෙවැනි තවත් ලෝක පුවත් සිංහලෙන් දැනගැනීමට අපගේ පිටුව follow කරන්න.",
+        "නවතම ලෝක පුවත් සඳහා World News in Sinhala සමඟ රැඳී සිටින්න.",
+        "වැදගත් පුවත් ඔබට ඉක්මනින් දැනගැනීමට අපගේ පිටුව සමඟ සම්බන්ධව සිටින්න.",
+        "මෙම පුවත පිළිබඳ නව තොරතුරු ලැබුණු විට අපි ඔබට යළිත් දැනුම් දෙන්නෙමු.",
+    ]
 
-def wrap_text(text, max_chars=24, max_lines=7):
-    words = text.split()
-    lines = []
-    line = ""
+    opening = random.choice(openings)
+    middle = random.choice(middle_lines)
+    ending = random.choice(endings)
 
-    for word in words:
-        test = f"{line} {word}".strip()
+    if summary_si and len(summary_si) > 20:
+        detail = summary_si
+    else:
+        detail = title_si
 
-        if len(test) <= max_chars:
-            line = test
-        else:
-            if line:
-                lines.append(line)
-            line = word
+    script = f"""
+{opening}
 
-    if line:
-        lines.append(line)
+ප්‍රධාන පුවත වන්නේ,
 
-    return "\n".join(lines[:max_lines])
+{title_si}
 
-def create_brand_background():
-    img = Image.new("RGB", (1080, 1920), (12, 24, 48))
-    draw = ImageDraw.Draw(img)
+විස්තර අනුව,
 
-    for y in range(1920):
-        shade = int(20 + (y / 1920) * 50)
-        draw.line((0, y, 1080, y), fill=(8, shade, 70))
+{detail}
 
-    return img
+{middle}
 
-def create_background(article_image_url):
-    if article_image_url:
-        try:
-            print("🖼 Using article image:", article_image_url)
-            r = requests.get(article_image_url, timeout=20, headers={"User-Agent": "Mozilla/5.0"})
-            img = Image.open(BytesIO(r.content)).convert("RGB")
+{ending}
+"""
 
-            # cover crop to 1080x1920
-            w, h = img.size
-            target_ratio = 1080 / 1920
-            img_ratio = w / h
-
-            if img_ratio > target_ratio:
-                new_w = int(h * target_ratio)
-                left = (w - new_w) // 2
-                img = img.crop((left, 0, left + new_w, h))
-            else:
-                new_h = int(w / target_ratio)
-                top = (h - new_h) // 2
-                img = img.crop((0, top, w, top + new_h))
-
-            img = img.resize((1080, 1920))
-            img = img.filter(ImageFilter.GaussianBlur(radius=2))
-            return img
-
-        except Exception as e:
-            print("⚠️ Article image failed:", e)
-
-    print("🖼 Using branded fallback background")
-    return create_brand_background()
+    return script
 
 # ===============================
-# Load posted
+# LOAD POSTED
 # ===============================
 
 if not os.path.exists(POSTED_FILE):
@@ -188,20 +205,24 @@ try:
 except Exception:
     posted = []
 
-print("🎬 Real Sinhala Reel Bot Started")
+print("🎬 Sinhala Image Only Reel Bot Started")
 
 # ===============================
-# Fetch news
+# FETCH NEWS
 # ===============================
 
 articles = []
 
 for feed in RSS_FEEDS:
-    data = feedparser.parse(feed)
+    try:
+        data = feedparser.parse(feed)
 
-    for entry in data.entries[:15]:
-        if hasattr(entry, "link") and entry.link not in posted:
-            articles.append(entry)
+        for entry in data.entries[:15]:
+            if hasattr(entry, "link") and entry.link not in posted:
+                articles.append(entry)
+
+    except Exception as e:
+        print("Feed error:", e)
 
 if not articles:
     print("❌ No new articles")
@@ -210,88 +231,56 @@ if not articles:
 news = random.choice(articles)
 
 title_en = clean_text(news.title)
-link = news.link
 summary_en = clean_text(getattr(news, "summary", ""))
+link = news.link
 
 title_si = safe_translate(title_en)
 summary_si = safe_translate(summary_en) if summary_en else ""
 
-article_image = get_article_image(news)
-
 # ===============================
-# Script + caption
+# CREATE VOICE
 # ===============================
 
-if is_good_sinhala(title_si):
-    voice_title = title_si
-else:
-    voice_title = title_en
+voice_script = create_voice_script(title_si, summary_si)
 
-script = f"""
-ලෝක පුවත් සිංහලෙන්.
+print("🎙 Voice script:")
+print(voice_script)
 
-අද ප්‍රධාන පුවත.
-
-{voice_title}
-
-මෙය ලෝකයේ බොහෝ දෙනාගේ අවධානයට ලක්ව ඇති වැදගත් පුවතකි.
-
-වැඩි විස්තර සඳහා World News in Sinhala පිටුව follow කරන්න.
-"""
-
-caption = f"""
-🌍 ලෝක පුවත් සිංහලෙන්
-
-🔥 {title_si}
-
-👉 වැඩි විස්තර:
-{link}
-
-#ලෝකපුවත් #සිංහලපුවත් #WorldNews #BreakingNews
-"""
-
-# ===============================
-# Voice
-# ===============================
-
-tts = gTTS(text=script, lang="si")
+tts = gTTS(text=voice_script, lang="si")
 tts.save(VOICE_FILE)
+
 print("🎙 Voice created")
 
 # ===============================
-# Image design
+# CREATE IMAGE BACKGROUND ONLY
 # ===============================
 
-img = create_background(article_image)
+article_image_url = get_article_image(news)
 
-# dark overlay
+img = None
+
+if article_image_url:
+    print("🖼 Using article image:", article_image_url)
+    img = download_image(article_image_url)
+
+if img:
+    img = cover_resize(img)
+else:
+    print("🖼 No article image. Using fallback image.")
+    img = create_fallback_image()
+
+# Slight blur + dark overlay for professional look
+img = img.filter(ImageFilter.GaussianBlur(radius=1))
+
 overlay = Image.new("RGB", (1080, 1920), (0, 0, 0))
-img = Image.blend(img, overlay, 0.55)
-
-draw = ImageDraw.Draw(img)
-
-font_big = load_font(64)
-font_medium = load_font(52)
-font_small = load_font(40)
-
-# top label
-draw.rounded_rectangle((55, 80, 1025, 210), radius=40, fill=(0, 0, 0))
-draw.text((95, 115), "🌍 ලෝක පුවත් සිංහලෙන්", fill="white", font=font_big)
-
-# title card
-draw.rounded_rectangle((55, 360, 1025, 1220), radius=45, fill=(0, 0, 0))
-draw.text((95, 430), wrap_text(title_si, 24, 8), fill="white", font=font_medium)
-
-# footer
-draw.rounded_rectangle((55, 1540, 1025, 1720), radius=35, fill=(0, 0, 0))
-draw.text((95, 1575), "වැඩි විස්තර සඳහා Follow කරන්න", fill="white", font=font_small)
-draw.text((95, 1640), "World News in Sinhala", fill="white", font=font_small)
+img = Image.blend(img, overlay, 0.18)
 
 img.save(IMAGE_FILE, "JPEG", quality=95)
-print("🖼 Image created")
+
+print("🖼 Background image created")
 
 # ===============================
-# Create MP4 video
+# CREATE VIDEO
 # ===============================
 
 audio = AudioFileClip(VOICE_FILE)
@@ -316,7 +305,7 @@ clip.write_videofile(
 print("✅ Video created")
 
 # ===============================
-# Facebook Reel Upload
+# FACEBOOK REEL UPLOAD
 # ===============================
 
 print("🚀 Starting Facebook Reel upload")
@@ -353,6 +342,17 @@ with open(VIDEO_FILE, "rb") as video_file:
 
 print("UPLOAD:", upload_res.text)
 
+caption = f"""
+🌍 ලෝක පුවත් සිංහලෙන්
+
+🔥 {title_si}
+
+👉 වැඩි විස්තර:
+{link}
+
+#ලෝකපුවත් #සිංහලපුවත් #WorldNews #BreakingNews
+"""
+
 finish_data = {
     "upload_phase": "finish",
     "video_id": video_id,
@@ -367,7 +367,7 @@ finish_json = finish_res.json()
 print("FINISH:", finish_json)
 
 # ===============================
-# Check status
+# CHECK STATUS
 # ===============================
 
 print("⏳ Checking Reel status")
@@ -402,7 +402,7 @@ for i in range(18):
             break
 
 # ===============================
-# Save posted
+# SAVE POSTED
 # ===============================
 
 if finish_res.status_code == 200 and finish_json.get("success") == True:

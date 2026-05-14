@@ -10,25 +10,13 @@ from io import BytesIO
 from googletrans import Translator
 from moviepy.editor import ImageClip, AudioFileClip
 
-# ===============================
-# FACEBOOK CONFIG
-# ===============================
-
 PAGE_ID = "1020689164470492"
 PAGE_ACCESS_TOKEN = "EAIFMs5yoDt0BRaZBnr8ZCFXX3AY6swXBZBsP6bcgJlQBr0OAxIQI9rfnT2dx2nVfPaUST5XsFgPdDSYX82BHdFAaPGkBZBqZBdrW43lcF5gpOYZCp74K6n0gh5fgd1U5ewm7FtcNbU9ZAbP6ZAX1X4f5qhNvE1jg6b1KfIZCF5looE0z41sVwo80iNoZAxD5QSkrXHId9IArdpOAUZCoVspdX9GBQjpux7O6YedvyTY6N6wrZApnfw1FZCl5AU2QZD"
-
-# ===============================
-# FILES
-# ===============================
 
 POSTED_FILE = "posted_reels.json"
 IMAGE_FILE = "reel_bg.jpg"
 VOICE_FILE = "voice.mp3"
 VIDEO_FILE = "sinhala_reel.mp4"
-
-# ===============================
-# NEWS SOURCES
-# ===============================
 
 RSS_FEEDS = [
     "https://feeds.bbci.co.uk/news/world/rss.xml",
@@ -38,10 +26,6 @@ RSS_FEEDS = [
 ]
 
 translator = Translator()
-
-# ===============================
-# LOAD POSTED
-# ===============================
 
 if not os.path.exists(POSTED_FILE):
     with open(POSTED_FILE, "w") as f:
@@ -53,42 +37,28 @@ try:
 except:
     posted = []
 
-print("🎬 Sinhala Auto Reel Bot Started")
-
-# ===============================
-# GET NEWS
-# ===============================
+print("🎬 Sinhala Reel Bot Started")
 
 articles = []
 
 for feed in RSS_FEEDS:
     data = feedparser.parse(feed)
-
     for entry in data.entries[:10]:
         if entry.link not in posted:
             articles.append(entry)
 
 if not articles:
-    print("❌ No new articles")
+    print("No new articles")
     exit()
 
 news = random.choice(articles)
-
 title_en = news.title
 link = news.link
-
-# ===============================
-# TRANSLATE
-# ===============================
 
 try:
     title_si = translator.translate(title_en, dest="si").text
 except:
     title_si = title_en
-
-# ===============================
-# SCRIPT + CAPTION
-# ===============================
 
 script = f"""
 ලෝක පුවත් සිංහලෙන්.
@@ -97,7 +67,7 @@ script = f"""
 
 {title_si}
 
-මෙම පුවත ලෝකයේ බොහෝ දෙනාගේ අවධානයට ලක් වී තිබේ.
+මෙය ලෝකයේ බොහෝ දෙනාගේ අවධානයට ලක්ව ඇති වැදගත් පුවතකි.
 
 වැඩි විස්තර සඳහා World News in Sinhala පිටුව follow කරන්න.
 """
@@ -113,18 +83,10 @@ caption = f"""
 #ලෝකපුවත් #සිංහලපුවත් #WorldNews #BreakingNews
 """
 
-# ===============================
-# CREATE VOICE
-# ===============================
-
 tts = gTTS(text=script, lang="si")
 tts.save(VOICE_FILE)
 
-print("🎙 Voice created")
-
-# ===============================
-# CREATE IMAGE
-# ===============================
+print("Voice created")
 
 img_url = f"https://picsum.photos/1080/1920?random={random.randint(1,999999)}"
 img_data = requests.get(img_url, timeout=20).content
@@ -132,45 +94,68 @@ img_data = requests.get(img_url, timeout=20).content
 img = Image.open(BytesIO(img_data)).convert("RGB").resize((1080, 1920))
 
 overlay = Image.new("RGB", (1080, 1920), (0, 0, 0))
-img = Image.blend(img, overlay, 0.50)
+img = Image.blend(img, overlay, 0.58)
 
 draw = ImageDraw.Draw(img)
 
-try:
-    font_big = ImageFont.truetype("DejaVuSans.ttf", 60)
-    font_small = ImageFont.truetype("DejaVuSans.ttf", 46)
-except:
-    font_big = ImageFont.load_default()
-    font_small = ImageFont.load_default()
+FONT_PATHS = [
+    "/usr/share/fonts/truetype/noto/NotoSansSinhala-Regular.ttf",
+    "/usr/share/fonts/truetype/noto/NotoSerifSinhala-Regular.ttf",
+    "/usr/share/fonts/opentype/noto/NotoSansSinhala-Regular.ttf",
+]
 
-def wrap_text(text, max_chars=24):
+font_path = None
+
+for path in FONT_PATHS:
+    if os.path.exists(path):
+        font_path = path
+        break
+
+if not font_path:
+    print("Sinhala font not found, using default")
+    font_big = ImageFont.load_default()
+    font_medium = ImageFont.load_default()
+    font_small = ImageFont.load_default()
+else:
+    font_big = ImageFont.truetype(font_path, 62)
+    font_medium = ImageFont.truetype(font_path, 50)
+    font_small = ImageFont.truetype(font_path, 42)
+
+def wrap_sinhala(text, max_chars=22):
     words = text.split()
     lines = []
     line = ""
 
     for word in words:
-        if len(line + " " + word) <= max_chars:
-            line += " " + word
+        test = line + " " + word if line else word
+
+        if len(test) <= max_chars:
+            line = test
         else:
-            lines.append(line.strip())
+            lines.append(line)
             line = word
 
     if line:
-        lines.append(line.strip())
+        lines.append(line)
 
-    return "\n".join(lines)
+    return "\n".join(lines[:7])
 
-draw.text((70, 160), "🌍 ලෝක පුවත් සිංහලෙන්", fill="white", font=font_big)
-draw.text((70, 420), wrap_text(title_si), fill="white", font=font_small)
-draw.text((70, 1600), "Follow කරන්න • World News in Sinhala", fill="white", font=font_small)
+# top badge
+draw.rounded_rectangle((60, 90, 1020, 210), radius=40, fill=(0, 0, 0))
+draw.text((100, 115), "🌍 ලෝක පුවත් සිංහලෙන්", fill="white", font=font_big)
+
+# title box
+draw.rounded_rectangle((60, 360, 1020, 1180), radius=45, fill=(0, 0, 0))
+draw.text((100, 420), wrap_sinhala(title_si), fill="white", font=font_medium)
+
+# footer
+draw.rounded_rectangle((60, 1540, 1020, 1710), radius=35, fill=(0, 0, 0))
+draw.text((100, 1575), "වැඩි විස්තර සඳහා Follow කරන්න", fill="white", font=font_small)
+draw.text((100, 1630), "World News in Sinhala", fill="white", font=font_small)
 
 img.save(IMAGE_FILE, "JPEG", quality=95)
 
-print("🖼 Image created")
-
-# ===============================
-# CREATE VIDEO
-# ===============================
+print("Image created")
 
 audio = AudioFileClip(VOICE_FILE)
 
@@ -179,18 +164,21 @@ clip = clip.set_audio(audio)
 
 clip.write_videofile(
     VIDEO_FILE,
-    fps=24,
+    fps=30,
     codec="libx264",
-    audio_codec="aac"
+    audio_codec="aac",
+    preset="medium",
+    ffmpeg_params=[
+        "-pix_fmt", "yuv420p",
+        "-movflags", "+faststart",
+        "-profile:v", "baseline",
+        "-level", "3.1"
+    ]
 )
 
-print("✅ Video created")
+print("Video created")
 
-# ===============================
-# FACEBOOK REELS UPLOAD — START
-# ===============================
-
-print("🚀 Starting Facebook Reel upload")
+print("Starting Facebook Reel upload")
 
 start_url = f"https://graph.facebook.com/v23.0/{PAGE_ID}/video_reels"
 
@@ -205,15 +193,11 @@ start_json = start_res.json()
 print("START:", start_json)
 
 if "video_id" not in start_json or "upload_url" not in start_json:
-    print("❌ Failed to start Reel upload")
+    print("Failed to start upload")
     exit()
 
 video_id = start_json["video_id"]
 upload_url = start_json["upload_url"]
-
-# ===============================
-# UPLOAD VIDEO FILE
-# ===============================
 
 file_size = os.path.getsize(VIDEO_FILE)
 
@@ -232,10 +216,6 @@ with open(VIDEO_FILE, "rb") as video_file:
 
 print("UPLOAD:", upload_res.text)
 
-# ===============================
-# FINISH + PUBLISH REEL
-# ===============================
-
 finish_data = {
     "upload_phase": "finish",
     "video_id": video_id,
@@ -249,15 +229,9 @@ finish_json = finish_res.json()
 
 print("FINISH:", finish_json)
 
-# ===============================
-# CHECK REEL STATUS
-# ===============================
+print("Checking Reel status")
 
-print("⏳ Checking Reel processing status...")
-
-ready = False
-
-for i in range(12):
+for i in range(18):
     time.sleep(10)
 
     status_url = f"https://graph.facebook.com/v23.0/{video_id}"
@@ -272,36 +246,12 @@ for i in range(12):
 
     print("STATUS:", status_json)
 
-    if "status" in status_json:
-        status = status_json["status"]
-
-        if isinstance(status, dict):
-            video_status = status.get("video_status")
-
-            if video_status == "ready":
-                print("✅ REEL READY")
-                ready = True
-                break
-
-            if video_status == "error":
-                print("❌ REEL PROCESSING ERROR")
-                break
-
-# ===============================
-# SAVE POSTED
-# ===============================
-
 if finish_res.status_code == 200 and finish_json.get("success") == True:
-    print("✅ REEL UPLOAD ACCEPTED BY FACEBOOK")
+    print("REEL UPLOAD ACCEPTED")
 
     posted.append(link)
 
     with open(POSTED_FILE, "w") as f:
         json.dump(posted, f)
-
-    if ready:
-        print("✅ REEL SHOULD NOW APPEAR ON PAGE")
-    else:
-        print("⚠️ REEL ACCEPTED BUT STILL PROCESSING")
 else:
-    print("❌ REEL POST FAILED")
+    print("REEL FAILED")
